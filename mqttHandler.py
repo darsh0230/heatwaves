@@ -5,7 +5,7 @@ from telegram import Bot
 BOT_TOKEN = "6442773979:AAEhZBu1_1qUxrubsZY0w0WP1YaKE5Kyz34"
 bot = Bot(token=BOT_TOKEN)
 
-message_sent = False
+message_sent = {}
 
 async def send_message_bot(chat_id, msg):
     await bot.send_message(chat_id=chat_id, text=msg)
@@ -19,7 +19,7 @@ username = '1234'
 password = '1234'
 
 
-myclient = pymongo.MongoClient("mongodb://localhost:27017/")
+myclient = pymongo.MongoClient("mongodb+srv://dimenl:dimenl7768@cluster0.rmeqq.mongodb.net/")
 mydb = myclient["heatwaves"]
 deviceCollection = mydb["devices"]
 userCollection = mydb["users"]
@@ -46,6 +46,7 @@ def subscribe(client: mqtt_client):
         deviceId = msg.topic.split("/")[-1]
         jsondata = json.loads(msg.payload.decode())
         # print(deviceId, jsondata)
+        print(f"DeviceId : {deviceId} Temperature : {jsondata.get('temperature')}")
 
         deviceCollection.find_one_and_update({"deviceId": deviceId},
                                     {"$set": {
@@ -60,19 +61,43 @@ def subscribe(client: mqtt_client):
                                     upsert=True)
         
         if jsondata.get("temperature") > jsondata.get("max_temperature"):
-
-        # if jsondata.get("temperature") < jsondata.get("max_temperature"): return
+            
             print("Sending alert")
         
             for user in userCollection.find():
-                print(math.dist([1,2], [2, 3]))
-                if math.dist([jsondata.get("latitude"), jsondata.get("longitude")], [user.get("latitude"), user.get("longitude")]) < 0.5:
+                if math.dist([jsondata.get("latitude"), jsondata.get("longitude")], [user.get("latitude"), user.get("longitude")]) < 0.3:
                     
                     global message_sent
-                    print("sending to user")
-                    if user.get("teleChatId") and not message_sent:
-                        asyncio.run(send_message_bot(chat_id=user.get("teleChatId"), msg="GTFO"))
-                        message_sent = True
+                    print(message_sent)
+                    if user.get("teleChatId") and not message_sent.get(deviceId):
+                        message_sent[deviceId] = True
+                        print("sending to user")
+                        try:
+                            asyncio.run(send_message_bot(chat_id=user.get("teleChatId"), msg=f"⚠️!!!!!WARNING!!!!!⚠️\nThere is high heat waves in your area. Please follow the following precautions:\n1. You can check that you are getting enough water by noting your urine color. Dark yellow may indicate you are not drinking enough.\n2. Avoid sugary, caffeinated and alcoholic drinks.\n3. If you are sweating a lot, combine water with snacks or a sports drink to replace the salt and minerals you lose in sweat.\n4. Talk to your doctor about how to prepare if you have a medical condition or are taking medicines.\n\nView the Heatmap in your area : https://heatwave-web.vercel.app/"))
+                        except:
+                            print("Tele fail to send alert")
+                        # message_sent = True
+
+            alertDevId = []
+            for device in deviceCollection.find({"deviceId":{"$ne":deviceId}}):
+                if math.dist([jsondata.get("latitude"), jsondata.get("longitude")], [device.get("latitude"), device.get("longitude")]) < 0.5 and device.get("temperature") > device.get("max_temperature"):
+                    alertDevId.append(device.get(deviceId))
+            
+            for device in deviceCollection.find({"deviceId":{"$ne":deviceId}}):
+                 if math.dist([jsondata.get("latitude"), jsondata.get("longitude")], [device.get("latitude"), device.get("longitude")]) < 0.5 and device.get("temperature") > device.get("max_temperature") and device.get(deviceId) not in alertDevId:
+                    for user in userCollection.find():
+                        if math.dist([device.get("latitude"), device.get("longitude")], [user.get("latitude"), user.get("longitude")]) < 0.5:
+                            if user.get("teleChatId"):
+                                try:
+                                    asyncio.run(send_message_bot(chat_id=user.get("teleChatId"), msg="warning"))
+                                except:
+                                    print("Tele fail to send warning")
+            
+
+        elif message_sent.get(deviceId):
+            message_sent[deviceId] = False
+                    
+
             
                 
 
